@@ -1,3 +1,5 @@
+require 'io/console'
+
 BUNDLED_ENV_VERSION = 2
 # ^ This has to be at line 0
 # This is so that a build on CP.app can be fast,
@@ -181,33 +183,37 @@ def log_command(group, command, output_file)
   log(group, command_for_presentation.join(' '))
 end
 
+def log_path
+  File.join('/', 'tmp', "cocoapods-app-bundle-build-#{Process.pid}")
+end
+
 def execute(group, command, output_file = nil)
-  command.map!(&:to_s)
-  log_command(group, command, output_file)
+  cmd = command.map(&:to_s)
+  log_command(group, cmd, output_file)
 
   if output_file
     out = File.open(output_file, 'a')
-  end
-  if VERBOSE
-    out ||= $stdout
-    err = $stderr
+    err = out
+  elsif VERBOSE
+    out = STDOUT
+    err = STDERR
   else
-    err = File.open("/tmp/cocoapods-app-bundle-build-#{Process.pid}", 'w+')
-    out ||= err
+    out = File.open(log_path, 'w+')
+    err = out
   end
-  command << { :out => out, :err => err }
 
-  Process.wait(Process.spawn(*command))
+  pid = Process.spawn(*cmd, out: out, err: err)
+
+  Process.wait(pid)
   unless $?.success?
     unless VERBOSE
       out.rewind
-      $stderr.puts(out.read)
+      STDERR.write(out.read)
     end
     exit $?.exitstatus
   end
 ensure
-  out.close if out && output_file
-  err.close if err && !VERBOSE
+  [out, err].each(&(VERBOSE ? :oflush : :close))
 end
 
 class BundleDependencyTasks
